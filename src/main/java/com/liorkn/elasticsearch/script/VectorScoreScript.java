@@ -15,13 +15,18 @@ package com.liorkn.elasticsearch.script;
 import com.liorkn.elasticsearch.Util;
 import org.apache.lucene.index.BinaryDocValues;
 import org.apache.lucene.store.ByteArrayDataInput;
+//import org.apache.commons.lang.ArrayUtils;
 import org.elasticsearch.common.Nullable;
 import org.elasticsearch.script.ExecutableScript;
 import org.elasticsearch.script.LeafSearchScript;
 import org.elasticsearch.script.ScriptException;
 
 import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.Arrays;
+import java.util.Collection;
 import java.util.Map;
+import java.util.Collections;
 
 
 /**
@@ -35,10 +40,14 @@ public final class VectorScoreScript implements LeafSearchScript, ExecutableScri
     private int docId;
     private BinaryDocValues binaryEmbeddingReader;
 
-    private final float[] inputVector;
-    private final float magnitude;
+//    private final float[][] inputVector = new float[][];
+    private ArrayList<float[]> inputVector = new ArrayList<>();
+    private ArrayList<Float> magnitudes = new ArrayList<>();
 
     private final boolean cosine;
+
+    private int rows;
+    private int cols;
 
     @Override
     public final Object run() {
@@ -56,6 +65,7 @@ public final class VectorScoreScript implements LeafSearchScript, ExecutableScri
      */
     @Override
     public double runAsDouble() {
+        System.out.println("Running runAsDouble");
         final byte[] bytes = binaryEmbeddingReader.get(docId).bytes;
         final ByteArrayDataInput input = new ByteArrayDataInput(bytes);
 
@@ -63,27 +73,44 @@ public final class VectorScoreScript implements LeafSearchScript, ExecutableScri
         input.readVInt(); // returns the number of values which should be 1
         input.readVInt(); // returns the number of bytes to read
 
-        float score = 0;
+
+        ArrayList<Double> distances = new ArrayList<>();
 
         if(cosine) {
             float docVectorNorm = 0.0f;
+            //TODO: fix magnitude. What is it? Where does it get set?
+            for (int i = 0; i < inputVector.size(); i++) {
+                float magnitude = magnitudes.get(i);
+                float dotprod = 0; //cosine distance
 
-            for (int i = 0; i < inputVector.length; i++) {
-                float v = Float.intBitsToFloat(input.readInt());
-                docVectorNorm += v * v;  // inputVector norm
-                score += v * inputVector[i];  // dot product
-            }
+                for (int j=0; j < inputVector.get(i).length; j++) {
+                    float v = Float.intBitsToFloat(input.readInt()); //double check that this gets the right values (does a next)
+                    docVectorNorm += v * v;  // inputVector norm
+                    dotprod += v * inputVector.get(i)[j];  // dot product
+                }
 
-            if (docVectorNorm == 0 || magnitude == 0) {
-                return 0f;
-            } else {
-                return score / (Math.sqrt(docVectorNorm) * magnitude);
+                if (docVectorNorm == 0 || magnitude == 0) {
+                    distances.add(0d);
+                } else {
+                    double cosine_d =  dotprod / (Math.sqrt(docVectorNorm) * magnitude);
+                    distances.add(cosine_d);
+                }
+
             }
+            // get the final score by taking the arg max over the cosine distance of attention layer comparisons.
+            // This is just the maximum over the distances vector
+            double score = Collections.max(distances);
+            return score;
+
         } else {
-            for (int i = 0; i < inputVector.length; i++) {
-                float v = Float.intBitsToFloat(input.readInt());
-                score += v * inputVector[i];  // dot product
+            float score = 0;
+            for (int i = 0; i < inputVector.size(); i++) {
+                for (int j=0; j < inputVector.get(i).length; j++) {
+                    float v = Float.intBitsToFloat(input.readInt());
+                    score += v * inputVector.get(i)[j];  // dot product
+                }
             }
+
 
             return score;
         }
@@ -138,42 +165,87 @@ public final class VectorScoreScript implements LeafSearchScript, ExecutableScri
      */
     @SuppressWarnings("unchecked")
     public VectorScoreScript(Map<String, Object> params) {
+        System.out.println("running VectorScoreScript");
         final Object cosineBool = params.get("cosine");
         cosine = cosineBool != null ?
                 (boolean)cosineBool :
                 true;
 
+        System.out.println("The value of cosine is " + cosine);
         final Object field = params.get("field");
         if (field == null)
             throw new IllegalArgumentException("binary_vector_score script requires field input");
         this.field = field.toString();
 
         // get query inputVector - convert to primitive
+        //I think this may be implemented somewhere else, but I'm not sure and this might mess up somewhere
         final Object vector = params.get("vector");
+        System.out.println("Vector looks like");
+        System.out.println(vector);
+        System.out.println(vector.getClass().getName());
         if(vector != null) {
-            final ArrayList<Double> tmp = (ArrayList<Double>) vector;
-            inputVector = new float[tmp.size()];
-            for (int i = 0; i < inputVector.length; i++) {
-                inputVector[i] = tmp.get(i).floatValue();
+            //TODO: now make this a 2D array
+//            inputVector = (ArrayList<float[]>) vector;
+//            System.out.println("inputVector looks like");
+//            System.out.println(inputVector);
+            final ArrayList<Float[]> tmp = (ArrayList<Float[]>) vector;
+//            is this even needed?
+            for (int i = 0; i < tmp.size(); i++) {
+                int size = tmp.get(i).length;
+                float[] v = new float[size];
+                for (int j = 0; j < tmp.get(i).length; j++) {
+                    v[j] = tmp.get(i)[j].floatValue();
+                }
+                inputVector.add(v);
             }
+            System.out.println("inputVector looks like "+inputVector);
         } else {
             final Object encodedVector = params.get("encoded_vector");
             if(encodedVector == null) {
                 throw new IllegalArgumentException("Must have at 'vector' or 'encoded_vector' as a parameter");
             }
-            inputVector = Util.convertBase64ToArray((String) encodedVector);
+            float[] tmpVector = Util.convertBase64ToArray((String) encodedVector);
+            //unflatten, for now hard coded, but this shouldn't be in the future.
+            int n = 10;
+            int len = tmpVector.length / n;
+            ArrayList<float[]> inputVector = new ArrayList<>();
+            for (int i=0; i < 10; i++){
+                float[] tmp = Arrays.copyOfRange(tmpVector, i*(len +1), (i+1)*len);
+                inputVector.add(tmp);
+            }
         }
 
         if(cosine) {
-            // calc magnitude
-            float queryVectorNorm = 0.0f;
+
             // compute query inputVector norm once
-            for (float v: inputVector) {
-                queryVectorNorm += v * v;
-            }
-            magnitude = (float) Math.sqrt(queryVectorNorm);
+            System.out.println("Computing input vector norm. inputVector: "+ inputVector);
+            System.out.println(inputVector.getClass().getName());
+            inputVector.forEach((v) -> {
+                System.out.println(v);
+
+            });
+//            for (int i=0; i < inputVector.size(); i++) {
+//                System.out.println("inside mag for loop");
+//                // calc magnitude
+//                float queryVectorNorm = 0.0f;
+//                System.out.println("v is " + inputVector.get(i));
+//                System.out.println("v type is " +inputVector.get(i).getClass().getName());
+//                System.out.println("entry type is "+inputVector.get(i)[0]);
+////                float[] v = inputVector.get(i);
+//                for(int j=0; j<inputVector.get(i).length; j++){
+//                    System.out.println(("inner for loop"));
+//                    System.out.println("num is "+ inputVector.get(i)[j]);
+//                    queryVectorNorm += inputVector.get(i)[j] * inputVector.get(i)[j];
+//                }
+//                float magnitude = (float) Math.sqrt(queryVectorNorm);
+//                magnitudes.add(magnitude);
+//            }
+
         } else {
-            magnitude = 0.0f;
+            magnitudes.add(0.0f);
         }
+        System.out.println("magnitudes looks like " + magnitudes);
+
+
     }
 }
