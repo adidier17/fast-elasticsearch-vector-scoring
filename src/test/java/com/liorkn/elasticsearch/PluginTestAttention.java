@@ -113,7 +113,7 @@ public class PluginTestAttention {
                 "          \"params\": {" +
                 "            \"cosine\": true," +
                 "            \"field\": \"embedding_vector\"," +
-                "            \"encoded_vector\":"  + "\"" + test_emb_vector + "\"," +
+                "            \"vector\":"  + "\"" + test_emb_vector + "\"," +
 //                "            \"vector\":"  + "\"" + test_vector + "\"," +
                 "            \"rows\": 2," +
                 "            \"cols\": 3" +
@@ -134,7 +134,7 @@ public class PluginTestAttention {
         // Testing Scores
         final ArrayNode hitsJson = (ArrayNode)mapper.readTree(resBody).get("hits").get("hits");
         Assert.assertEquals(0.9941734, hitsJson.get(0).get("_score").asDouble(), 0);
-        Assert.assertEquals(0.9561829, hitsJson.get(1).get("_score").asDouble(), 0);
+        Assert.assertEquals(0.95618284, hitsJson.get(1).get("_score").asDouble(), 0);
     }
 
     @AfterClass

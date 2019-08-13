@@ -9,8 +9,8 @@ import java.util.Base64;
  * Created by Lior Knaany on 4/7/18.
  */
 public class Util {
-
-    public static float[] convertBase64ToArray(String base64Str) {
+    //TODO ask Ana about good ways to error handle
+    public static float[] convertBase64ToArray(String base64Str) throws IllegalArgumentException {
         final byte[] decode = Base64.getDecoder().decode(base64Str.getBytes());
         final FloatBuffer floatBuffer = ByteBuffer.wrap(decode).asFloatBuffer();
         final float[] dims = new float[floatBuffer.capacity()];
@@ -46,7 +46,7 @@ public class Util {
         return new String(encodedBB.array());
     }
 
-    public static float[][] convertBase64To2DArray(String base64Str, int rows, int cols){
+    public static float[][] convertBase64To2DArray(String base64Str, int rows, int cols) throws IllegalArgumentException{
         float[] as1DArr = convertBase64ToArray(base64Str);
         float[][] as2DArr = new float[rows][cols];
 

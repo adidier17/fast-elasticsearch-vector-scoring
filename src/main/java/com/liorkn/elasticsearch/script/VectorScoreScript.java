@@ -39,9 +39,6 @@ public final class VectorScoreScript implements LeafSearchScript, ExecutableScri
 
     private int docId;
     private BinaryDocValues binaryEmbeddingReader;
-
-
-//    private ArrayList<float[]> inputVector = new ArrayList<>();
     private ArrayList<Float> magnitudes = new ArrayList<>();
 
     private final boolean cosine;
@@ -49,7 +46,6 @@ public final class VectorScoreScript implements LeafSearchScript, ExecutableScri
     private int rows;
     private int cols;
     private float[][] inputVector = new float[rows][cols];
-//    private float[] magnitudes = new float[rows];
 
     @Override
     public final Object run() {
@@ -84,7 +80,7 @@ public final class VectorScoreScript implements LeafSearchScript, ExecutableScri
             System.out.println("Computing distance");
             for (int i = 0; i < this.rows; i++) {
                 System.out.println("i "+ i);
-                float magnitude = magnitudes.get(i);
+                float magnitude = this.magnitudes.get(i);
                 float dotprod = 0; //cosine distance
                 System.out.println("magnitude "+ magnitude);
                 for (int j=0; j < this.cols; j++) {
@@ -165,11 +161,22 @@ public final class VectorScoreScript implements LeafSearchScript, ExecutableScri
         }
     }
 
+    private float[][] getInputVector(Object tmp_vector) throws Exception {
+        try {
+            float[][] vector = Util.convertBase64To2DArray(tmp_vector.toString(), this.rows, this.cols);
+            return vector;
+        }
+        catch (Exception E){
+            throw new Exception(E + ". Expected vector to be a base64 encoded 2D array of shape "+ this.rows + "," + this.cols +
+                    ",\nbut got " + tmp_vector.toString());
+        }
+    }
+
     /**
      * Init
      * @param params index that a scored are placed in this parameter. Initialize them here.
      */
-    @SuppressWarnings("unchecked")
+
     public VectorScoreScript(Map<String, Object> params) {
         System.out.println("running VectorScoreScript");
         final Object cosineBool = params.get("cosine");
@@ -191,57 +198,35 @@ public final class VectorScoreScript implements LeafSearchScript, ExecutableScri
         this.field = field.toString();
 
         // get query inputVector - convert to primitive
-        //I think this may be implemented somewhere else, but I'm not sure and this might mess up somewhere
-        final Object vector = params.get("vector");
-        if(vector != null) {
-
-            final ArrayList<Float[]> tmp = (ArrayList<Float[]>) vector;
-            System.out.println("tmp looks like " + tmp);
-            System.out.println("tmp is " + tmp.getClass());
-            for (int i = 0; i < tmp.size(); i++) {
-                int size = tmp.get(i).length;
-                float[] v = new float[size];
-                for (int j = 0; j < tmp.get(i).length; j++) {
-                    v[j] = tmp.get(i)[j].floatValue();
-                }
-                inputVector[i] = v;
-            }
-            System.out.println("inputVector looks like "+inputVector);
-        } else {
-            final Object encodedVector = params.get("encoded_vector");
-            if(encodedVector == null) {
-                throw new IllegalArgumentException("Must have at 'vector' or 'encoded_vector' as a parameter");
-            }
-
-            inputVector= Util.convertBase64To2DArray((String) encodedVector, rows, cols);
-            System.out.println("inputVector looks like! " + Arrays.deepToString(inputVector));
-
+        final Object tmpVector = params.get("vector");
+        try{
+            this.inputVector = getInputVector(tmpVector);
+        }
+        catch(Exception E){
+            E.printStackTrace();
         }
 
         if(cosine) {
 
             // compute query inputVector norm once
-//            System.out.println("Computing input vector norm. inputVector: "+ Arrays.deepToString(inputVector));
             for (int i=0; i < rows; i++) {
-//                System.out.println("inside mag for loop");
+
                 // calc magnitude
                 float queryVectorNorm = 0.0f;
                 for(int j=0; j<cols; j++){
-//                    System.out.println("j "+j);
-//                    System.out.println(inputVector[i][j]);
-                    queryVectorNorm += inputVector[i][j] * inputVector[i][j];
+
+                    queryVectorNorm += this.inputVector[i][j] * this.inputVector[i][j];
                 }
                 float magnitude = (float) Math.sqrt(queryVectorNorm);
-//                System.out.println(magnitude);
-                magnitudes.add(magnitude);
+                this.magnitudes.add(magnitude);
 
             }
 
         } else {
             for (int i=0; i < rows; i++)
-            magnitudes.add(0.0f);
+            this.magnitudes.add(0.0f);
         }
-        System.out.println("magnitudes looks like " + magnitudes);
+
 
 
     }
