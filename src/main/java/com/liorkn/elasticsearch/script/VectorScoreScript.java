@@ -40,14 +40,16 @@ public final class VectorScoreScript implements LeafSearchScript, ExecutableScri
     private int docId;
     private BinaryDocValues binaryEmbeddingReader;
 
-//    private final float[][] inputVector = new float[][];
-    private ArrayList<float[]> inputVector = new ArrayList<>();
+
+//    private ArrayList<float[]> inputVector = new ArrayList<>();
     private ArrayList<Float> magnitudes = new ArrayList<>();
 
     private final boolean cosine;
 
     private int rows;
     private int cols;
+    private float[][] inputVector = new float[rows][cols];
+//    private float[] magnitudes = new float[rows];
 
     @Override
     public final Object run() {
@@ -66,6 +68,7 @@ public final class VectorScoreScript implements LeafSearchScript, ExecutableScri
     @Override
     public double runAsDouble() {
         System.out.println("Running runAsDouble");
+        System.out.println("doc id is "+docId);
         final byte[] bytes = binaryEmbeddingReader.get(docId).bytes;
         final ByteArrayDataInput input = new ByteArrayDataInput(bytes);
 
@@ -76,17 +79,20 @@ public final class VectorScoreScript implements LeafSearchScript, ExecutableScri
 
         ArrayList<Double> distances = new ArrayList<>();
 
-        if(cosine) {
+        if(this.cosine) {
             float docVectorNorm = 0.0f;
-            //TODO: fix magnitude. What is it? Where does it get set?
-            for (int i = 0; i < inputVector.size(); i++) {
+            System.out.println("Computing distance");
+            for (int i = 0; i < this.rows; i++) {
+                System.out.println("i "+ i);
                 float magnitude = magnitudes.get(i);
                 float dotprod = 0; //cosine distance
-
-                for (int j=0; j < inputVector.get(i).length; j++) {
+                System.out.println("magnitude "+ magnitude);
+                for (int j=0; j < this.cols; j++) {
+                    System.out.println("j "+j);
                     float v = Float.intBitsToFloat(input.readInt()); //double check that this gets the right values (does a next)
+                    System.out.println(v);
                     docVectorNorm += v * v;  // inputVector norm
-                    dotprod += v * inputVector.get(i)[j];  // dot product
+                    dotprod += v * this.inputVector[i][j];  // dot product
                 }
 
                 if (docVectorNorm == 0 || magnitude == 0) {
@@ -104,10 +110,10 @@ public final class VectorScoreScript implements LeafSearchScript, ExecutableScri
 
         } else {
             float score = 0;
-            for (int i = 0; i < inputVector.size(); i++) {
-                for (int j=0; j < inputVector.get(i).length; j++) {
+            for (int i = 0; i < this.inputVector.length; i++) {
+                for (int j=0; j < this.inputVector[i].length; j++) {
                     float v = Float.intBitsToFloat(input.readInt());
-                    score += v * inputVector.get(i)[j];  // dot product
+                    score += v * this.inputVector[i][j];  // dot product
                 }
             }
 
@@ -167,11 +173,18 @@ public final class VectorScoreScript implements LeafSearchScript, ExecutableScri
     public VectorScoreScript(Map<String, Object> params) {
         System.out.println("running VectorScoreScript");
         final Object cosineBool = params.get("cosine");
-        cosine = cosineBool != null ?
+        this.cosine = cosineBool != null ?
                 (boolean)cosineBool :
                 true;
 
         System.out.println("The value of cosine is " + cosine);
+
+        Object rows_tmp = params.get("rows");
+        Object cols_tmp = params.get("cols");
+        this.rows = (Integer) rows_tmp;
+        this.cols = (Integer) cols_tmp;
+
+
         final Object field = params.get("field");
         if (field == null)
             throw new IllegalArgumentException("binary_vector_score script requires field input");
@@ -180,23 +193,18 @@ public final class VectorScoreScript implements LeafSearchScript, ExecutableScri
         // get query inputVector - convert to primitive
         //I think this may be implemented somewhere else, but I'm not sure and this might mess up somewhere
         final Object vector = params.get("vector");
-        System.out.println("Vector looks like");
-        System.out.println(vector);
-        System.out.println(vector.getClass().getName());
         if(vector != null) {
-            //TODO: now make this a 2D array
-//            inputVector = (ArrayList<float[]>) vector;
-//            System.out.println("inputVector looks like");
-//            System.out.println(inputVector);
+
             final ArrayList<Float[]> tmp = (ArrayList<Float[]>) vector;
-//            is this even needed?
+            System.out.println("tmp looks like " + tmp);
+            System.out.println("tmp is " + tmp.getClass());
             for (int i = 0; i < tmp.size(); i++) {
                 int size = tmp.get(i).length;
                 float[] v = new float[size];
                 for (int j = 0; j < tmp.get(i).length; j++) {
                     v[j] = tmp.get(i)[j].floatValue();
                 }
-                inputVector.add(v);
+                inputVector[i] = v;
             }
             System.out.println("inputVector looks like "+inputVector);
         } else {
@@ -204,44 +212,33 @@ public final class VectorScoreScript implements LeafSearchScript, ExecutableScri
             if(encodedVector == null) {
                 throw new IllegalArgumentException("Must have at 'vector' or 'encoded_vector' as a parameter");
             }
-            float[] tmpVector = Util.convertBase64ToArray((String) encodedVector);
-            //unflatten, for now hard coded, but this shouldn't be in the future.
-            int n = 10;
-            int len = tmpVector.length / n;
-            ArrayList<float[]> inputVector = new ArrayList<>();
-            for (int i=0; i < 10; i++){
-                float[] tmp = Arrays.copyOfRange(tmpVector, i*(len +1), (i+1)*len);
-                inputVector.add(tmp);
-            }
+
+            inputVector= Util.convertBase64To2DArray((String) encodedVector, rows, cols);
+            System.out.println("inputVector looks like! " + Arrays.deepToString(inputVector));
+
         }
 
         if(cosine) {
 
             // compute query inputVector norm once
-            System.out.println("Computing input vector norm. inputVector: "+ inputVector);
-            System.out.println(inputVector.getClass().getName());
-            inputVector.forEach((v) -> {
-                System.out.println(v);
-
-            });
-//            for (int i=0; i < inputVector.size(); i++) {
+//            System.out.println("Computing input vector norm. inputVector: "+ Arrays.deepToString(inputVector));
+            for (int i=0; i < rows; i++) {
 //                System.out.println("inside mag for loop");
-//                // calc magnitude
-//                float queryVectorNorm = 0.0f;
-//                System.out.println("v is " + inputVector.get(i));
-//                System.out.println("v type is " +inputVector.get(i).getClass().getName());
-//                System.out.println("entry type is "+inputVector.get(i)[0]);
-////                float[] v = inputVector.get(i);
-//                for(int j=0; j<inputVector.get(i).length; j++){
-//                    System.out.println(("inner for loop"));
-//                    System.out.println("num is "+ inputVector.get(i)[j]);
-//                    queryVectorNorm += inputVector.get(i)[j] * inputVector.get(i)[j];
-//                }
-//                float magnitude = (float) Math.sqrt(queryVectorNorm);
-//                magnitudes.add(magnitude);
-//            }
+                // calc magnitude
+                float queryVectorNorm = 0.0f;
+                for(int j=0; j<cols; j++){
+//                    System.out.println("j "+j);
+//                    System.out.println(inputVector[i][j]);
+                    queryVectorNorm += inputVector[i][j] * inputVector[i][j];
+                }
+                float magnitude = (float) Math.sqrt(queryVectorNorm);
+//                System.out.println(magnitude);
+                magnitudes.add(magnitude);
+
+            }
 
         } else {
+            for (int i=0; i < rows; i++)
             magnitudes.add(0.0f);
         }
         System.out.println("magnitudes looks like " + magnitudes);

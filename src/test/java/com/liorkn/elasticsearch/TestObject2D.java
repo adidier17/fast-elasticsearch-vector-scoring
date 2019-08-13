@@ -26,10 +26,14 @@ public class TestObject2D {
         return vector;
     }
 
+    public int getRows() {return rows;}
+
+    public int getCols() {return cols;}
+
     public TestObject2D(int jobId, float[][] vector, int rows, int cols) {
         this.jobId = jobId;
         this.vector = vector;
-        this.embeddingVector = Util.convert2dArrayToBase64(vector);
+        this.embeddingVector= Util.convert2dArrayToBase64(vector);
         this.rows = rows;
         this.cols = cols;
     }

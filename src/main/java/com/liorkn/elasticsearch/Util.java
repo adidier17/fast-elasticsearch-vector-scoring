@@ -35,8 +35,8 @@ public class Util {
         final int capacity = Float.BYTES * array.length*array[0].length;
         final ByteBuffer bb = ByteBuffer.allocate(capacity);
         for (float[] v : array) {
-            for (double num : v) {
-                bb.putFloat((float) num);
+            for (float num : v) {
+                bb.putFloat(num);
             }
 
         }
@@ -49,10 +49,10 @@ public class Util {
     public static float[][] convertBase64To2DArray(String base64Str, int rows, int cols){
         float[] as1DArr = convertBase64ToArray(base64Str);
         float[][] as2DArr = new float[rows][cols];
+
         for(int i = 0; i < rows; i++){
             as2DArr[i] = Arrays.copyOfRange(as1DArr, i*(cols), (i+1)*cols);
         }
-
         return as2DArr;
     }
 }

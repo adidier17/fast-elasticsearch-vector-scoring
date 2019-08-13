@@ -55,12 +55,12 @@ public class PluginTestAttention {
                 "        },\n" +
                 "        \"vector\": {\n" +
                 "          \"type\": \"float\"\n" +
-                "        }\n" +
+                "        },\n" +
                 "        \"rows\": {\n" +
-                "          \"type\": \"int\"\n" +
-                "        }\n" +
+                "          \"type\": \"integer\"\n" +
+                "        },\n" +
                 "        \"cols\": {\n" +
-                "          \"type\": \"int\"\n" +
+                "          \"type\": \"integer\"\n" +
                 "        }\n" +
                 "      }\n" +
                 "    }\n" +
@@ -80,8 +80,8 @@ public class PluginTestAttention {
     public void test() throws Exception {
         final Map<String, String> params = new HashMap<>();
         params.put("refresh", "true");
-        final TestObject2D[] objs = {new TestObject2D(1, new float[][] {{0.0f, 0.5f, 1.0f},{1.6f, 7.3f, 0.2f}}, 2, 3)};
-//                new TestObject2D(2, new float[][] {{0.2f, 0.6f, 0.99f}, {1.4f, 3.2f, 0.7f}}, 2, 3)};
+        final TestObject2D[] objs = {new TestObject2D(1, new float[][] {{0.0f, 0.5f, 1.0f},{1.6f, 7.3f, 0.2f}}, 2, 3),
+                new TestObject2D(2, new float[][] {{0.2f, 0.6f, 0.99f}, {1.4f, 3.2f, 0.7f}}, 2, 3)};
 
         for (int i = 0; i < objs.length; i++) {
             final TestObject2D t = objs[i];
@@ -94,8 +94,13 @@ public class PluginTestAttention {
             Assert.assertTrue(statusCode == 200 || statusCode == 201);
         }
 
+        float[] test1 = new float[] {0.1f, 0.2f, 0.3f};
+        String test1_encoded = Util.convertArrayToBase64(test1);
+        float[] decoded = Util.convertBase64ToArray(test1_encoded);
+        System.out.println("decoded test " + decoded);
         float[][] test_vector = new float[][] {{0.1f, 0.2f, 0.3f}, {1.1f, 2.2f, 3.3f}};
         String test_emb_vector = Util.convert2dArrayToBase64(test_vector);
+        System.out.println("encoded test vector "+test_emb_vector);
         // Test cosine score function
         String body = "{" +
                 "  \"query\": {" +
@@ -108,7 +113,10 @@ public class PluginTestAttention {
                 "          \"params\": {" +
                 "            \"cosine\": true," +
                 "            \"field\": \"embedding_vector\"," +
-                "            \"vector\":"  + test_emb_vector + "," +
+                "            \"encoded_vector\":"  + "\"" + test_emb_vector + "\"," +
+//                "            \"vector\":"  + "\"" + test_vector + "\"," +
+                "            \"rows\": 2," +
+                "            \"cols\": 3" +
                 "          }" +
                 "        }" +
                 "      }" +
@@ -116,6 +124,7 @@ public class PluginTestAttention {
                 "  }," +
                 "  \"size\": 100" +
                 "}";
+//        Object body2 = {  "query": {    "function_score": {      "boost_mode": "replace",      "script_score": {        "script": {          "source": "binary_vector_score",          "lang": "knn",          "params": {            "cosine": true,            "field": "embedding_vector",            "embedding_vector":"PczMzT5MzM0+mZmaP4zMzUAMzM1AUzMz",            "rows": 2,            "cols": 3          }        }      }    }  },  "size": 100}
         final Response res = esClient.performRequest("POST", "/test/_search", Collections.emptyMap(), new NStringEntity(body, ContentType.APPLICATION_JSON));
         System.out.println(res);
         final String resBody = EntityUtils.toString(res.getEntity());
@@ -124,8 +133,8 @@ public class PluginTestAttention {
         Assert.assertTrue(String.format("There should be %d documents in the search response", objs.length), resBody.contains("\"hits\":{\"total\":" + objs.length));
         // Testing Scores
         final ArrayNode hitsJson = (ArrayNode)mapper.readTree(resBody).get("hits").get("hits");
-        Assert.assertEquals(0.9625334218796221, hitsJson.get(0).get("_score").asDouble(), 0);
-//        Assert.assertEquals(0.9941734049743228, hitsJson.get(1).get("_score").asDouble(), 0);
+        Assert.assertEquals(0.9941734, hitsJson.get(0).get("_score").asDouble(), 0);
+        Assert.assertEquals(0.9561829, hitsJson.get(1).get("_score").asDouble(), 0);
     }
 
     @AfterClass
